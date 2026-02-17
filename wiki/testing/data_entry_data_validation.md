@@ -17,18 +17,15 @@ This runbook is designed for an engineer with zero prior context. Run commands f
 ## Prerequisites
 
 - Docker Desktop running
-- `.env` present in repo root
+- `.env` present in repo root (build it from the example in `README.md`)
 - `curl` and `jq` installed locally
 
-Example `.env` values:
+Load your local `.env` into the current shell so `$POSTGRES_USER` and `$POSTGRES_DB` are available:
 
-```env
-POSTGRES_USER=skinny
-POSTGRES_PASSWORD=skinny
-POSTGRES_DB=fitness
-JWT_SECRET=<your-jwt-secret>
-DATABASE_URL=postgresql+psycopg://skinny:skinny@db:5432/fitness
-VITE_API_BASE_URL=http://localhost:8000
+```bash
+set -a
+source .env
+set +a
 ```
 
 ## Environment Boot
@@ -70,10 +67,10 @@ Expected:
 Validate critical schema objects:
 
 ```bash
-docker compose exec db psql -U skinny -d fitness -c "\\d workouts"
-docker compose exec db psql -U skinny -d fitness -c "\\d exercises"
-docker compose exec db psql -U skinny -d fitness -c "\\d cardio_sessions"
-docker compose exec db psql -U skinny -d fitness -c "\\d strength_sets"
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\\d workouts"
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\\d exercises"
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\\d cardio_sessions"
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\\d strength_sets"
 ```
 
 Expected:
@@ -94,7 +91,7 @@ Create a test user and token:
 
 ```bash
 EMAIL="qa.$(date +%s)@example.com"
-PASSWORD="Passw0rd!"
+PASSWORD="AthosTest!$(date +%s)"
 
 SIGNUP_RESP=$(curl -sS -X POST http://localhost:8000/v1/auth/signup \
   -H "Content-Type: application/json" \
@@ -160,7 +157,7 @@ Get user A profile and one exercise ID:
 curl -sS http://localhost:8000/v1/auth/me -H "Authorization: Bearer $TOKEN"
 
 USER_ID=$(curl -sS http://localhost:8000/v1/auth/me -H "Authorization: Bearer $TOKEN" | jq -r '.user_id')
-EXERCISE_ID=$(docker compose exec db psql -U skinny -d fitness -t -A -c "
+EXERCISE_ID=$(docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -t -A -c "
 SELECT id FROM exercises WHERE user_id = $USER_ID LIMIT 1;
 " | tr -d '[:space:]')
 
@@ -171,7 +168,7 @@ Create user B and attempt to post a workout using user A’s `exercise_id`:
 
 ```bash
 EMAIL_B="qa.b.$(date +%s)@example.com"
-PASSWORD_B="Passw0rd!"
+PASSWORD_B="AthosTestB!$(date +%s)"
 
 TOKEN_B=$(curl -sS -X POST http://localhost:8000/v1/auth/signup \
   -H "Content-Type: application/json" \
@@ -216,7 +213,7 @@ echo "$CARDIO_WORKOUT_ID"
 Attempt duplicate child insert:
 
 ```bash
-docker compose exec db psql -U skinny -d fitness -c "
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
 SELECT count(*) AS cardio_rows_before
 FROM cardio_sessions
 WHERE workout_id = '$CARDIO_WORKOUT_ID';
@@ -250,7 +247,7 @@ STRENGTH_WORKOUT_ID=$(curl -sS -X POST http://localhost:8000/v1/workouts \
     "strength_sets": [{"exercise_name":"Cascade Lift","set_index":1,"weight":100,"reps":5}]
   }' | jq -r '.workout_id')
 
-docker compose exec db psql -U skinny -d fitness -c "
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
 SELECT count(*) AS child_count_before
 FROM strength_sets
 WHERE workout_id = '$STRENGTH_WORKOUT_ID';
@@ -277,7 +274,7 @@ CARDIO_WORKOUT_ID_2=$(curl -sS -X POST http://localhost:8000/v1/workouts \
     "cardio_session": {"distance_miles": 1.0, "duration_seconds": 600}
   }' | jq -r '.workout_id')
 
-docker compose exec db psql -U skinny -d fitness -c "
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
 SELECT count(*) AS child_count_before
 FROM cardio_sessions
 WHERE workout_id = '$CARDIO_WORKOUT_ID_2';
@@ -335,7 +332,7 @@ curl -sS -X POST http://localhost:8000/v1/workouts \
     "strength_sets": [{"exercise_name":"  cable row  ","set_index":1,"weight":95,"reps":8}]
   }' >/dev/null
 
-docker compose exec db psql -U skinny -d fitness -c "
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
 SELECT COUNT(*) AS canonical_exercise_rows
 FROM exercises
 WHERE user_id = (SELECT user_id FROM users WHERE email = '$EMAIL')
@@ -363,7 +360,7 @@ from urllib.request import Request, urlopen
 
 base = "http://127.0.0.1:8000"
 email = f"race.{int(time.time())}@example.com"
-password = "Passw0rd!"
+password = f"AthosTest!{int(time.time())}"
 exercise_name = "Concurrency Bench"
 
 def req(method, path, payload=None, token=None):
@@ -416,7 +413,7 @@ PY
 Use script output values to validate one exercise row exists:
 
 ```bash
-docker compose exec db psql -U skinny -d fitness -c "
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
 SELECT COUNT(*)
 FROM exercises e
 JOIN users u ON u.user_id = e.user_id
@@ -439,7 +436,7 @@ Goal:
 Check insertion semantics:
 
 ```bash
-docker compose exec db psql -U skinny -d fitness -c "
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
 SELECT id, created_at, updated_at, (created_at = updated_at) AS same_on_insert
 FROM workouts
 ORDER BY created_at DESC
@@ -454,19 +451,19 @@ Expected:
 Check direct SQL update semantics:
 
 ```bash
-WORKOUT_ID_FOR_TS=$(docker compose exec db psql -U skinny -d fitness -t -A -c "
+WORKOUT_ID_FOR_TS=$(docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -t -A -c "
 SELECT id FROM workouts ORDER BY created_at DESC LIMIT 1;
 " | tr -d '[:space:]')
 
-docker compose exec db psql -U skinny -d fitness -c "
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
 SELECT created_at, updated_at FROM workouts WHERE id = '$WORKOUT_ID_FOR_TS';
 "
 
-docker compose exec db psql -U skinny -d fitness -c "
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
 UPDATE workouts SET title = 'Timestamp Probe' WHERE id = '$WORKOUT_ID_FOR_TS';
 "
 
-docker compose exec db psql -U skinny -d fitness -c "
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
 SELECT created_at, updated_at FROM workouts WHERE id = '$WORKOUT_ID_FOR_TS';
 "
 ```
