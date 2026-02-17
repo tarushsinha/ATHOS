@@ -3,8 +3,23 @@
 Current project state is a proof-of-concept stack:
 - Frontend: React + Vite
 - Backend: FastAPI
+- ORM: SQLAlchemy 2.0
+- Migrations: Alembic
+- Auth: JWT (signup/login/me)
 - Database: Postgres 16
 - Orchestration: Docker Compose
+
+## Current Backend Scope
+
+Implemented and validated:
+- Auth endpoints: `POST /v1/auth/signup`, `POST /v1/auth/login`, `GET /v1/auth/me`
+- Workout write endpoint: `POST /v1/workouts` (strength/cardio data entry)
+- Alembic-managed schema for users + core workout domain tables
+- Idempotent workout creation via `client_uuid`
+- User-scoped writes and relational integrity constraints
+
+Planned next:
+- Read/query endpoints for workouts and related domain data
 
 ## Prerequisites
 
@@ -101,7 +116,7 @@ docker compose exec backend alembic -c alembic.ini upgrade head
 
 Verify tables in Postgres:
 ```bash
-docker compose exec db psql -U skinny -d fitness -c "\dt"
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\dt"
 ```
 
 ## Stop the Stack
