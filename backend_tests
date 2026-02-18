@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+print_help() {
+  cat <<'HELP'
+Usage:
+  ./backend_tests                 Run all backend test modules
+  ./backend_tests --h            Show this help
+  ./backend_tests -run <module>  Run a specific module
+
+Available modules:
+  health       -> tests.test_health_smoke
+  auth         -> tests.test_auth
+  data_entry   -> tests.test_data_entry
+  read         -> tests.test_read_workouts
+  dashboard    -> tests.test_dashboard
+  all          -> all modules above
+HELP
+}
+
+module_to_test() {
+  case "$1" in
+    health) echo "tests.test_health_smoke" ;;
+    auth) echo "tests.test_auth" ;;
+    data_entry) echo "tests.test_data_entry" ;;
+    read) echo "tests.test_read_workouts" ;;
+    dashboard) echo "tests.test_dashboard" ;;
+    all) echo "tests.test_health_smoke tests.test_auth tests.test_data_entry tests.test_read_workouts tests.test_dashboard" ;;
+    *)
+      echo "Unknown module: $1" >&2
+      print_help
+      exit 1
+      ;;
+  esac
+}
+
+MODULES="tests.test_health_smoke tests.test_auth tests.test_data_entry tests.test_read_workouts tests.test_dashboard"
+
+if [[ "${1:-}" == "--h" || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  print_help
+  exit 0
+fi
+
+if [[ "${1:-}" == "-run" ]]; then
+  if [[ -z "${2:-}" ]]; then
+    echo "Missing module name for -run" >&2
+    print_help
+    exit 1
+  fi
+  MODULES="$(module_to_test "$2")"
+fi
+
+docker compose up -d db backend
+
+docker compose exec backend python -m unittest -q $MODULES

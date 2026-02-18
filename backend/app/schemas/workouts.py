@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.db.models.enums import Modality
 
@@ -68,3 +68,58 @@ class WorkoutCreateResponse(BaseModel):
     workout_type: Modality
     strength_set_count: int = 0
     cardio_session_created: bool = False
+
+
+class WorkoutListItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    workout_type: Modality
+    title: str | None
+    start_ts: datetime
+    end_ts: datetime | None
+    source: str | None
+    provider: str | None
+    client_uuid: UUID | None
+    strength_set_count: int = 0
+    cardio_session_created: bool = False
+
+
+class StrengthSetDetailResponse(BaseModel):
+    id: UUID
+    workout_id: UUID
+    exercise_id: UUID
+    exercise_name: str
+    set_index: int
+    weight: float | None
+    reps: int | None
+    duration_seconds: int | None
+    rpe: float | None
+    notes: str | None
+
+
+class CardioSessionDetailResponse(BaseModel):
+    id: UUID
+    workout_id: UUID
+    distance_miles: float | None
+    duration_seconds: int | None
+    incline: float | None
+    speed_mph: float | None
+    resistance: float | None
+    rpms: float | None
+    notes: str | None
+
+
+class WorkoutDetailResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    workout_type: Modality
+    title: str | None
+    start_ts: datetime
+    end_ts: datetime | None
+    source: str | None
+    provider: str | None
+    client_uuid: UUID | None
+    strength_sets: list[StrengthSetDetailResponse] = Field(default_factory=list)
+    cardio_session: CardioSessionDetailResponse | None = None

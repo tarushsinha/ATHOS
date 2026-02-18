@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from datetime import date as date_cls
+from datetime import datetime, time, timedelta, timezone
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -15,7 +18,14 @@ from app.db.models.exercise import Exercise
 from app.db.models.strength_set import StrengthSet
 from app.db.models.workout import Workout
 from app.db.session import get_db
-from app.schemas.workouts import WorkoutCreateRequest, WorkoutCreateResponse
+from app.schemas.workouts import (
+    CardioSessionDetailResponse,
+    StrengthSetDetailResponse,
+    WorkoutCreateRequest,
+    WorkoutCreateResponse,
+    WorkoutDetailResponse,
+    WorkoutListItemResponse,
+)
 
 router = APIRouter(prefix="/v1/workouts", tags=["workouts"])
 
@@ -98,6 +108,18 @@ def _is_idempotency_conflict(exc: IntegrityError) -> bool:
     if constraint_name == IDEMPOTENCY_CONSTRAINT:
         return True
     return IDEMPOTENCY_CONSTRAINT in str(exc.orig)
+
+
+def _resolve_client_timezone(client_timezone: str | None) -> ZoneInfo:
+    if not client_timezone:
+        return ZoneInfo("UTC")
+    try:
+        return ZoneInfo(client_timezone)
+    except ZoneInfoNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid X-Client-Timezone header",
+        ) from None
 
 
 @router.post("", response_model=WorkoutCreateResponse, status_code=status.HTTP_201_CREATED)
@@ -199,4 +221,154 @@ def create_workout(
         workout_type=workout.workout_type,
         strength_set_count=strength_count,
         cardio_session_created=cardio_created,
+    )
+
+
+@router.get("", response_model=list[WorkoutListItemResponse])
+def list_workouts(
+    workout_date: date_cls = Query(..., alias="date"),
+    limit: int = Query(20, ge=1, le=200),
+    client_timezone: str | None = Header(default=None, alias="X-Client-Timezone"),
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(get_current_user_id),
+):
+    tz = _resolve_client_timezone(client_timezone)
+    local_start = datetime.combine(workout_date, time.min, tzinfo=tz)
+    local_end = local_start + timedelta(days=1)
+    start_utc = local_start.astimezone(timezone.utc)
+    end_utc = local_end.astimezone(timezone.utc)
+
+    strength_counts = (
+        select(
+            StrengthSet.workout_id.label("workout_id"),
+            func.count(StrengthSet.id).label("strength_set_count"),
+        )
+        .where(StrengthSet.user_id == current_user_id)
+        .group_by(StrengthSet.workout_id)
+        .subquery()
+    )
+
+    cardio_counts = (
+        select(
+            CardioSession.workout_id.label("workout_id"),
+            func.count(CardioSession.id).label("cardio_count"),
+        )
+        .where(CardioSession.user_id == current_user_id)
+        .group_by(CardioSession.workout_id)
+        .subquery()
+    )
+
+    stmt = (
+        select(
+            Workout,
+            func.coalesce(strength_counts.c.strength_set_count, 0).label("strength_set_count"),
+            (func.coalesce(cardio_counts.c.cardio_count, 0) > 0).label("cardio_session_created"),
+        )
+        .outerjoin(strength_counts, strength_counts.c.workout_id == Workout.id)
+        .outerjoin(cardio_counts, cardio_counts.c.workout_id == Workout.id)
+        .where(
+            Workout.user_id == current_user_id,
+            Workout.start_ts >= start_utc,
+            Workout.start_ts < end_utc,
+        )
+        .order_by(Workout.start_ts.desc())
+        .limit(limit)
+    )
+
+    rows = db.execute(stmt).all()
+    return [
+        WorkoutListItemResponse(
+            id=workout.id,
+            workout_type=workout.workout_type,
+            title=workout.title,
+            start_ts=workout.start_ts,
+            end_ts=workout.end_ts,
+            source=workout.source,
+            provider=workout.provider,
+            client_uuid=workout.client_uuid,
+            strength_set_count=int(strength_set_count),
+            cardio_session_created=bool(cardio_session_created),
+        )
+        for workout, strength_set_count, cardio_session_created in rows
+    ]
+
+
+@router.get("/{workout_id}", response_model=WorkoutDetailResponse)
+def get_workout(
+    workout_id: UUID,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(get_current_user_id),
+):
+    workout = db.execute(
+        select(Workout).where(
+            Workout.id == workout_id,
+            Workout.user_id == current_user_id,
+        )
+    ).scalar_one_or_none()
+    if workout is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workout not found")
+
+    strength_sets: list[StrengthSetDetailResponse] = []
+    cardio_session: CardioSessionDetailResponse | None = None
+
+    if workout.workout_type == Modality.STRENGTH:
+        strength_rows = db.execute(
+            select(StrengthSet, Exercise.name.label("exercise_name"))
+            .join(Exercise, Exercise.id == StrengthSet.exercise_id)
+            .where(
+                StrengthSet.workout_id == workout.id,
+                StrengthSet.user_id == current_user_id,
+            )
+            .order_by(
+                StrengthSet.set_index.is_(None),
+                StrengthSet.set_index.asc(),
+                StrengthSet.id.asc(),
+            )
+        ).all()
+        strength_sets = [
+            StrengthSetDetailResponse(
+                id=set_row.id,
+                workout_id=set_row.workout_id,
+                exercise_id=set_row.exercise_id,
+                exercise_name=exercise_name,
+                set_index=set_row.set_index,
+                weight=set_row.weight,
+                reps=set_row.reps,
+                duration_seconds=set_row.duration_seconds,
+                rpe=set_row.rpe,
+                notes=set_row.notes,
+            )
+            for set_row, exercise_name in strength_rows
+        ]
+    elif workout.workout_type == Modality.CARDIO:
+        cardio = db.execute(
+            select(CardioSession).where(
+                CardioSession.workout_id == workout.id,
+                CardioSession.user_id == current_user_id,
+            )
+        ).scalar_one_or_none()
+        if cardio is not None:
+            cardio_session = CardioSessionDetailResponse(
+                id=cardio.id,
+                workout_id=cardio.workout_id,
+                distance_miles=cardio.distance_miles,
+                duration_seconds=cardio.duration_seconds,
+                incline=cardio.incline,
+                speed_mph=cardio.speed_mph,
+                resistance=cardio.resistance,
+                rpms=cardio.rpms,
+                notes=cardio.notes,
+            )
+
+    return WorkoutDetailResponse(
+        id=workout.id,
+        workout_type=workout.workout_type,
+        title=workout.title,
+        start_ts=workout.start_ts,
+        end_ts=workout.end_ts,
+        source=workout.source,
+        provider=workout.provider,
+        client_uuid=workout.client_uuid,
+        strength_sets=strength_sets,
+        cardio_session=cardio_session,
     )
