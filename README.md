@@ -6,6 +6,7 @@ Current project state is a proof-of-concept stack:
 - ORM: SQLAlchemy 2.0
 - Migrations: Alembic
 - Auth: JWT (signup/login/me)
+- Testing: Python `unittest` integration suites run in Docker
 - Database: Postgres 16
 - Orchestration: Docker Compose
 
@@ -14,12 +15,18 @@ Current project state is a proof-of-concept stack:
 Implemented and validated:
 - Auth endpoints: `POST /v1/auth/signup`, `POST /v1/auth/login`, `GET /v1/auth/me`
 - Workout write endpoint: `POST /v1/workouts` (strength/cardio data entry)
+- Workout read endpoints: `GET /v1/workouts`, `GET /v1/workouts/{id}`
+- Dashboard read endpoint: `GET /v1/dashboard/day`
 - Alembic-managed schema for users + core workout domain tables
 - Idempotent workout creation via `client_uuid`
 - User-scoped writes and relational integrity constraints
+- Timezone-aware day filtering via `X-Client-Timezone`
+- Modular backend test runner: `./backend_tests` (`--h`, `-run <module>`)
 
 Planned next:
-- Read/query endpoints for workouts and related domain data
+- Dashboard API telemetry enhancements and data shaping updates
+- Frontend integration for workouts and dashboard reads
+- Additional frontend UX/visualization work for data entry and daily summary
 
 ## Prerequisites
 
@@ -117,6 +124,23 @@ docker compose exec backend alembic -c alembic.ini upgrade head
 Verify tables in Postgres:
 ```bash
 docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\dt"
+```
+
+## Backend Tests
+
+Run all backend test modules:
+```bash
+./backend_tests
+```
+
+List available test modules:
+```bash
+./backend_tests --h
+```
+
+Run a single module:
+```bash
+./backend_tests -run read
 ```
 
 ## Stop the Stack
