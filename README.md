@@ -68,6 +68,28 @@ VITE_API_BASE_URL=http://localhost:8000
 EOF
 ```
 
+REPLACE the following with anything, cannot be an empty string
+```bash
+<db_user>
+<db_password>
+<jwt_secret>
+```
+
+Example:
+```bash
+POSTGRES_USER="roosh"
+POSTGRES_PASSWORD="mcdonalds"
+JWT_SECRET=<"roosh mcdonald had a farm"
+
+```
+
+2.1. Set env
+```bash
+set -a
+source .env
+set +a
+```
+
 3. Build and start all services.
 ```bash
 docker compose up --build
