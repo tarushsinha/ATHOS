@@ -7,12 +7,10 @@ on:
 jobs:
   notify:
     runs-on: ubuntu-latest
-
     steps:
-      # PR opened
       - name: PR opened
         if: github.event.action != 'closed'
-        uses: tsickert/discord-webhook@v5
+        uses: tsickert/discord-webhook@v6.0.0
         with:
           webhook-url: ${{ secrets.DISC_HOOK }}
           content: |
@@ -20,10 +18,9 @@ jobs:
             👤 ${{ github.event.pull_request.user.login }}
             🔗 ${{ github.event.pull_request.html_url }}
 
-      # PR merged only
       - name: PR merged
         if: github.event.action == 'closed' && github.event.pull_request.merged == true
-        uses: tsickert/discord-webhook@v5
+        uses: tsickert/discord-webhook@v6.0.0
         with:
           webhook-url: ${{ secrets.DISC_HOOK }}
           content: |
