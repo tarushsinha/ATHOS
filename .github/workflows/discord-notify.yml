@@ -1,0 +1,31 @@
+name: Discord PR notifications
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, closed]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+
+    steps:
+      # PR opened
+      - name: PR opened
+        if: github.event.action != 'closed'
+        uses: tsickert/discord-webhook@v5
+        with:
+          webhook-url: ${{ secrets.DISC_HOOK }}
+          content: |
+            🔀 PR opened: **${{ github.event.pull_request.title }}**
+            👤 ${{ github.event.pull_request.user.login }}
+            🔗 ${{ github.event.pull_request.html_url }}
+
+      # PR merged only
+      - name: PR merged
+        if: github.event.action == 'closed' && github.event.pull_request.merged == true
+        uses: tsickert/discord-webhook@v5
+        with:
+          webhook-url: ${{ secrets.DISC_HOOK }}
+          content: |
+            ✅ PR merged: **${{ github.event.pull_request.title }}**
+            🔗 ${{ github.event.pull_request.html_url }}
