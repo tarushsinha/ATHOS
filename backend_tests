@@ -54,4 +54,6 @@ fi
 
 docker compose up -d db backend
 
+docker compose exec backend alembic -c alembic.ini upgrade head
+
 docker compose exec backend python -m unittest -q $MODULES
