@@ -119,3 +119,33 @@ class HealthAndSmokeTests(BackendTestBase):
                 "body_without_cors_headers_dashboard": b_d,
             },
         )
+
+    def test_cors_exposes_request_id_header_on_actual_response(self):
+        self._info("Checks CORS actual response exposes X-Request-ID for browser fetch header access.")
+        from urllib.request import Request, urlopen
+
+        req = Request(self.base + "/healthz", method="GET")
+        req.add_header("Origin", "http://localhost:5173")
+
+        with urlopen(req) as resp:
+            headers = {k.lower(): v for k, v in resp.headers.items()}
+            status = resp.status
+
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get("access-control-allow-origin"), "http://localhost:5173")
+        self.assertIn("x-request-id", headers.get("access-control-expose-headers", "").lower())
+        self._pass(
+            "CORS actual response exposes X-Request-ID",
+            "ok",
+            expected_payload={
+                "status": 200,
+                "access-control-allow-origin": "http://localhost:5173",
+                "access-control-expose-headers_contains": "X-Request-ID",
+            },
+            received_payload={
+                "status": status,
+                "access-control-allow-origin": headers.get("access-control-allow-origin"),
+                "access-control-expose-headers": headers.get("access-control-expose-headers"),
+                "x-request-id": headers.get("x-request-id"),
+            },
+        )

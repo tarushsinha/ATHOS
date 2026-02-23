@@ -3,14 +3,16 @@
 ATHOS is currently in backend-first proof-of-concept mode, with frontend wiring ready to begin.
 
 ## Stack
-- Frontend: React + Vite + TypeScript
+- Frontend: React + Vite + TypeScript + React Router
 - Backend: FastAPI
 - ORM: SQLAlchemy 2.0
 - Migrations: Alembic
 - Auth: JWT bearer tokens
 - Database: Postgres 16
 - Orchestration: Docker Compose
-- Tests: Python `unittest` integration suites (`./backend_tests`)
+- Tests:
+  - Backend: Python `unittest` integration suites (`./backend_tests`)
+  - Frontend: Vitest (client/token store coverage)
 
 ## Current State
 
@@ -21,19 +23,26 @@ Implemented and validated:
 - Dashboard read: `GET /v1/dashboard/day`
 - User-scoped data access and idempotent create (`client_uuid`)
 - Alembic migrations for users + workout domain tables
+- Vite/React Router + protected routes (`/workout`, `/dashboard`)
+- API client with auth support + `X-Client-Timezone` header
+- Login flow with error handling and surfaced `X-Request-ID`
+- Workout entry toggle form (strength/cardio)
+- Dashboard JSON dump (date-scoped)
 - Request observability:
   - `X-Request-ID` on responses
   - structured request logs (`athos.request`)
   - domain event logs (auth/workouts/dashboard)
 - CORS enabled for Vite local dev (`http://localhost:5173`)
-
-Not implemented yet:
-- Frontend auth/workout/dashboard UI flows
-- broader domain features beyond current workout/dashboard scope
+- CORS exposes `X-Request-ID` (`Access-Control-Expose-Headers` regression test included)
+- README runbook refreshed (startup, migrations, logs, smoke path)
 
 ## What’s Next
-- Prompt 2: frontend API client + auth UI + workout entry + dashboard JSON wiring
-- Then UI refinement and richer dashboard presentation
+- Signup UI page (backend endpoint exists)
+- Cardio contract alignment (currently mapping extra cardio fields into `notes`)
+- Strength payload validation UX (required reps/weight and numeric constraints)
+- Better error rendering (422 field-level feedback)
+- `/me` bootstrap on app load (persisted session UX)
+- Dashboard UI shaping after contract/validation stabilization
 
 ## Prerequisites
 - Docker Desktop (or Docker Engine + Compose plugin)
@@ -62,14 +71,21 @@ VITE_API_BASE_URL=http://localhost:8000
 EOF
 ```
 
-3. Start services:
+3. Start services from a clean slate:
 ```bash
-docker compose up --build
+docker compose down -v
+docker compose up -d --build
+docker compose exec backend alembic -c alembic.ini upgrade head
 ```
 
 4. Check endpoints:
 - Frontend: `http://localhost:5173`
 - Backend health: `http://localhost:8000/health`
+
+5. Run backend tests:
+```bash
+./backend_tests
+```
 
 ## Walkthrough (Current App Behavior)
 
@@ -81,6 +97,7 @@ curl -sS -X POST http://localhost:8000/v1/auth/signup \
   -H "Content-Type: application/json" \
   -d '{"email":"dev1@example.com","name":"Dev One","password":"AthosTest!1234","birth_year":1992,"birth_month":8}'
 ```
+Note: steps 2, 4, and 5 should be tested through the front end UI for further product improvements at this time.
 
 2. Login:
 ```bash
