@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
@@ -15,6 +16,107 @@ from tests.base import BackendTestBase
 
 
 class DataEntryTests(BackendTestBase):
+    def test_datetime_start_ts_explicit_missing_null_invalid_and_date_only_behavior(self):
+        self._info("Checks start_ts handling: explicit valid, missing, null defaulting; invalid 422; preserves currently accepted date-only input.")
+        _, _, token = self._signup()
+
+        status_explicit, body_explicit = self._create_strength_workout(
+            token,
+            "2026-02-06T18:50:00Z",
+            [{"exercise_name": "Explicit TS", "weight": 100, "reps": 5}],
+            title="Explicit TS",
+        )
+        self.assertEqual(status_explicit, 201, body_explicit)
+        wid_explicit = UUID(body_explicit["workout_id"])
+
+        with SessionLocal() as db:
+            w_explicit = db.execute(select(Workout).where(Workout.id == wid_explicit)).scalar_one()
+            self.assertEqual(w_explicit.start_ts.isoformat().replace("+00:00", "Z"), "2026-02-06T18:50:00Z")
+
+        before_missing = datetime.now(timezone.utc)
+        status_missing, body_missing = self._request(
+            "POST",
+            "/v1/workouts",
+            token=token,
+            payload={
+                "workout_type": "STRENGTH",
+                "title": "Missing TS",
+                "strength_sets": [{"exercise_name": "Missing TS Lift", "reps": 8}],
+            },
+        )
+        after_missing = datetime.now(timezone.utc)
+        self.assertEqual(status_missing, 201, body_missing)
+        wid_missing = UUID(body_missing["workout_id"])
+        with SessionLocal() as db:
+            w_missing = db.execute(select(Workout).where(Workout.id == wid_missing)).scalar_one()
+            self.assertGreaterEqual(w_missing.start_ts, before_missing)
+            self.assertLessEqual(w_missing.start_ts, after_missing)
+
+        before_null = datetime.now(timezone.utc)
+        status_null, body_null = self._request(
+            "POST",
+            "/v1/workouts",
+            token=token,
+            payload={
+                "workout_type": "STRENGTH",
+                "title": "Null TS",
+                "start_ts": None,
+                "strength_sets": [{"exercise_name": "Null TS Lift", "reps": 8}],
+            },
+        )
+        after_null = datetime.now(timezone.utc)
+        self.assertEqual(status_null, 201, body_null)
+        wid_null = UUID(body_null["workout_id"])
+        with SessionLocal() as db:
+            w_null = db.execute(select(Workout).where(Workout.id == wid_null)).scalar_one()
+            self.assertGreaterEqual(w_null.start_ts, before_null)
+            self.assertLessEqual(w_null.start_ts, after_null)
+
+        status_invalid, body_invalid = self._request(
+            "POST",
+            "/v1/workouts",
+            token=token,
+            payload={
+                "workout_type": "STRENGTH",
+                "title": "Invalid TS",
+                "start_ts": "not-a-date",
+                "strength_sets": [{"exercise_name": "Invalid TS Lift", "reps": 8}],
+            },
+        )
+        self.assertEqual(status_invalid, 422, body_invalid)
+
+        status_date_only, body_date_only = self._request(
+            "POST",
+            "/v1/workouts",
+            token=token,
+            payload={
+                "workout_type": "STRENGTH",
+                "title": "Date Only TS",
+                "start_ts": "2026-02-06",
+                "strength_sets": [{"exercise_name": "Date Only TS Lift", "reps": 8}],
+            },
+        )
+        self.assertEqual(status_date_only, 201, body_date_only)
+
+        self._pass(
+            "explicit timestamp persisted, missing/null defaulted to UTC now, invalid rejected, date-only remains accepted",
+            "ok",
+            expected_payload={
+                "explicit_status": 201,
+                "missing_status": 201,
+                "null_status": 201,
+                "invalid_status": 422,
+                "date_only_status": 201,
+            },
+            received_payload={
+                "explicit_status": status_explicit,
+                "missing_status": status_missing,
+                "null_status": status_null,
+                "invalid_status": status_invalid,
+                "date_only_status": status_date_only,
+            },
+        )
+
     def test_workout_create_strength_and_cardio(self):
         self._info("Checks strength and cardio create contracts for /v1/workouts.")
         _, _, token = self._signup()

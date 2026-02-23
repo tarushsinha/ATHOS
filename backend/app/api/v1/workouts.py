@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import date as date_cls
 from datetime import datetime, time, timedelta, timezone
+import logging
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -28,6 +29,7 @@ from app.schemas.workouts import (
 )
 
 router = APIRouter(prefix="/v1/workouts", tags=["workouts"])
+logger = logging.getLogger("athos.domain")
 
 IDEMPOTENCY_CONSTRAINT = "uq_workouts_user_client_uuid_not_null"
 EXERCISE_NAME_UNIQUE_CONSTRAINT = "uq_exercises_user_name_lower"
@@ -125,6 +127,7 @@ def _resolve_client_timezone(client_timezone: str | None) -> ZoneInfo:
 @router.post("", response_model=WorkoutCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_workout(
     payload: WorkoutCreateRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user_id: int = Depends(get_current_user_id),
 ):
@@ -198,6 +201,12 @@ def create_workout(
                 )
             ).scalar_one_or_none()
             if existing_workout is not None:
+                logger.info(
+                    "domain_event event=workout_idempotency_hit user_id=%s workout_id=%s request_id=%s",
+                    current_user_id,
+                    existing_workout.id,
+                    getattr(request.state, "request_id", None),
+                )
                 resp = WorkoutCreateResponse(
                     workout_id=existing_workout.id,
                     workout_type=existing_workout.workout_type,
@@ -216,6 +225,16 @@ def create_workout(
         db.rollback()
         raise
 
+    logger.info(
+        "domain_event event=workout_created user_id=%s workout_id=%s workout_type=%s strength_set_count=%s cardio_session_created=%s start_ts_defaulted=%s request_id=%s",
+        current_user_id,
+        workout.id,
+        workout.workout_type.value,
+        strength_count,
+        cardio_created,
+        payload.start_ts_defaulted,
+        getattr(request.state, "request_id", None),
+    )
     return WorkoutCreateResponse(
         workout_id=workout.id,
         workout_type=workout.workout_type,

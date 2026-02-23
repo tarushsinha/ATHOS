@@ -57,3 +57,65 @@ class HealthAndSmokeTests(BackendTestBase):
                 "cardio_sessions_uniques": sorted(cardio_uniques),
             },
         )
+
+    def test_cors_preflight_workouts_and_dashboard(self):
+        self._info("Checks CORS preflight for Vite dev origin on workouts and dashboard endpoints.")
+        common_headers = {
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "Authorization, Content-Type, X-Client-Timezone",
+        }
+
+        s_w, b_w = self._request("OPTIONS", "/v1/workouts", include_tz=False)
+        s_d, b_d = self._request("OPTIONS", "/v1/dashboard/day", include_tz=False)
+
+        # Use low-level requests with CORS headers to validate middleware response headers.
+        from urllib.request import Request, urlopen
+
+        req_w = Request(self.base + "/v1/workouts", method="OPTIONS")
+        req_d = Request(self.base + "/v1/dashboard/day", method="OPTIONS")
+        for k, v in common_headers.items():
+            req_w.add_header(k, v)
+            req_d.add_header(k, v)
+
+        with urlopen(req_w) as rw:
+            hw = {k.lower(): v for k, v in rw.headers.items()}
+            status_w = rw.status
+        with urlopen(req_d) as rd:
+            hd = {k.lower(): v for k, v in rd.headers.items()}
+            status_d = rd.status
+
+        self.assertIn(status_w, (200, 204))
+        self.assertIn(status_d, (200, 204))
+        self.assertEqual(hw.get("access-control-allow-origin"), "http://localhost:5173")
+        self.assertEqual(hd.get("access-control-allow-origin"), "http://localhost:5173")
+        self.assertIn("post", hw.get("access-control-allow-methods", "").lower())
+        self.assertIn("post", hd.get("access-control-allow-methods", "").lower())
+        self.assertIn("authorization", hw.get("access-control-allow-headers", "").lower())
+        self.assertIn("content-type", hw.get("access-control-allow-headers", "").lower())
+        self.assertIn("x-client-timezone", hw.get("access-control-allow-headers", "").lower())
+        self.assertIn("authorization", hd.get("access-control-allow-headers", "").lower())
+        self.assertIn("content-type", hd.get("access-control-allow-headers", "").lower())
+        self.assertIn("x-client-timezone", hd.get("access-control-allow-headers", "").lower())
+
+        self._pass(
+            "OPTIONS preflight succeeds with expected CORS allow-* headers",
+            "ok",
+            expected_payload={
+                "status_workouts": "200 or 204",
+                "status_dashboard": "200 or 204",
+                "allow_origin": "http://localhost:5173",
+                "allow_methods_contains": ["POST"],
+                "allow_headers_contains": ["Authorization", "Content-Type", "X-Client-Timezone"],
+            },
+            received_payload={
+                "status_workouts": status_w,
+                "status_dashboard": status_d,
+                "headers_workouts": hw,
+                "headers_dashboard": hd,
+                "status_without_cors_headers_workouts": s_w,
+                "status_without_cors_headers_dashboard": s_d,
+                "body_without_cors_headers_workouts": b_w,
+                "body_without_cors_headers_dashboard": b_d,
+            },
+        )

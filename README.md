@@ -1,178 +1,178 @@
 # ATHOS
 
-Current project state is a proof-of-concept stack:
-- Frontend: React + Vite
+ATHOS is currently in backend-first proof-of-concept mode, with frontend wiring ready to begin.
+
+## Stack
+- Frontend: React + Vite + TypeScript
 - Backend: FastAPI
 - ORM: SQLAlchemy 2.0
 - Migrations: Alembic
-- Auth: JWT (signup/login/me)
-- Testing: Python `unittest` integration suites run in Docker
+- Auth: JWT bearer tokens
 - Database: Postgres 16
 - Orchestration: Docker Compose
+- Tests: Python `unittest` integration suites (`./backend_tests`)
 
-## Current Backend Scope
+## Current State
 
 Implemented and validated:
-- Auth endpoints: `POST /v1/auth/signup`, `POST /v1/auth/login`, `GET /v1/auth/me`
-- Workout write endpoint: `POST /v1/workouts` (strength/cardio data entry)
-- Workout read endpoints: `GET /v1/workouts`, `GET /v1/workouts/{id}`
-- Dashboard read endpoint: `GET /v1/dashboard/day`
-- Alembic-managed schema for users + core workout domain tables
-- Idempotent workout creation via `client_uuid`
-- User-scoped writes and relational integrity constraints
-- Timezone-aware day filtering via `X-Client-Timezone`
-- Modular backend test runner: `./backend_tests` (`--h`, `-run <module>`)
+- Auth: `POST /v1/auth/signup`, `POST /v1/auth/login`, `GET /v1/auth/me`
+- Workouts write: `POST /v1/workouts`
+- Workouts read: `GET /v1/workouts`, `GET /v1/workouts/{id}`
+- Dashboard read: `GET /v1/dashboard/day`
+- User-scoped data access and idempotent create (`client_uuid`)
+- Alembic migrations for users + workout domain tables
+- Request observability:
+  - `X-Request-ID` on responses
+  - structured request logs (`athos.request`)
+  - domain event logs (auth/workouts/dashboard)
+- CORS enabled for Vite local dev (`http://localhost:5173`)
 
-Planned next:
-- Dashboard API telemetry enhancements and data shaping updates
-- Frontend integration for workouts and dashboard reads
-- Additional frontend UX/visualization work for data entry and daily summary
+Not implemented yet:
+- Frontend auth/workout/dashboard UI flows
+- broader domain features beyond current workout/dashboard scope
+
+## What’s Next
+- Prompt 2: frontend API client + auth UI + workout entry + dashboard JSON wiring
+- Then UI refinement and richer dashboard presentation
 
 ## Prerequisites
-
-Required:
 - Docker Desktop (or Docker Engine + Compose plugin)
-
-Recommended:
 - Git
 
-Not required for the standard startup flow (`docker compose up`):
-- Node.js / npm (frontend runs in container)
-- Python / pip / virtualenv (backend runs in container)
+Optional for local frontend-only commands:
+- Node.js + npm
 
-## Getting Started
+## Setup
 
-1. Clone and enter the repo.
+1. Clone:
 ```bash
 git clone <repo-url>
 cd ATHOS
 ```
 
-2. Confirm `.env` exists in repo root.
-```bash
-ls -la .env
-```
-
-If `.env` does not exist, create it using this template (replace placeholder secret values):
+2. Create root `.env` if missing:
 ```bash
 cat > .env <<'EOF'
-# Postgres
 POSTGRES_USER=<db_user>
 POSTGRES_PASSWORD=<db_password>
 POSTGRES_DB=fitness
-
-# App
 JWT_SECRET=<jwt_secret>
 DATABASE_URL=postgresql+psycopg://<db_user>:<db_password>@db:5432/fitness
 VITE_API_BASE_URL=http://localhost:8000
 EOF
 ```
 
-REPLACE the following with anything, cannot be an empty string
-```bash
-<db_user>
-<db_password>
-<jwt_secret>
-```
-
-Example:
-```bash
-POSTGRES_USER="roosh"
-POSTGRES_PASSWORD="mcdonalds"
-JWT_SECRET=<"roosh mcdonald had a farm"
-
-```
-
-2.1. Set env
-```bash
-set -a
-source .env
-set +a
-```
-
-3. Build and start all services.
+3. Start services:
 ```bash
 docker compose up --build
 ```
 
-4. Open the apps:
-- Frontend: http://localhost:5173
-- Backend health: http://localhost:8000/health
-- Postgres: localhost:5432
+4. Check endpoints:
+- Frontend: `http://localhost:5173`
+- Backend health: `http://localhost:8000/health`
 
-## Verify Services
+## Walkthrough (Current App Behavior)
 
-In another terminal:
+Use these commands to validate end-to-end behavior before frontend wiring:
 
-Check container status:
+1. Signup:
 ```bash
-docker compose ps
+curl -sS -X POST http://localhost:8000/v1/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{"email":"dev1@example.com","name":"Dev One","password":"AthosTest!1234","birth_year":1992,"birth_month":8}'
 ```
 
-Check Postgres readiness:
+2. Login:
 ```bash
-docker compose exec db pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+curl -sS -X POST http://localhost:8000/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"dev1@example.com","password":"AthosTest!1234"}'
 ```
 
-Run a simple DB query:
+3. Me:
 ```bash
-docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1;"
+curl -sS http://localhost:8000/v1/auth/me \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-## Alembic (Migrations)
-
-Run all migration commands from repo root:
-
-Check Alembic is installed in backend container:
+4. Create workout (omit `start_ts`; backend defaults to UTC now):
 ```bash
-docker compose exec backend alembic --version
+curl -sS -X POST http://localhost:8000/v1/workouts \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"workout_type":"STRENGTH","title":"Frontend readiness","strength_sets":[{"exercise_name":"Bench Press","weight":135,"reps":8}]}'
 ```
 
-Check current migration state:
+5. Dashboard read:
 ```bash
+curl -sS "http://localhost:8000/v1/dashboard/day?date=2026-02-06&limit=50&top_k=10" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Client-Timezone: America/Los_Angeles"
+```
+
+6. Invalid timestamp check:
+```bash
+curl -sS -X POST http://localhost:8000/v1/workouts \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"workout_type":"STRENGTH","start_ts":"not-a-date","strength_sets":[{"exercise_name":"Bench Press","reps":8}]}'
+```
+Expected: `422`
+
+## Frontend Env
+
+- Frontend should read API URL from `import.meta.env.VITE_API_BASE_URL`.
+- Minimal readiness files:
+  - `frontend/.env.example`
+  - `frontend/src/config.ts`
+- No Vite proxy is required right now; backend CORS is already configured for local dev.
+
+## Migrations
+
+```bash
+docker compose exec backend alembic -c alembic.ini upgrade head
 docker compose exec backend alembic current
 ```
 
-Create a new autogenerated revision (example: users table):
-```bash
-docker compose exec backend alembic -c alembic.ini revision --autogenerate -m "create users table"
-```
+## Tests
 
-Apply migrations:
-```bash
-docker compose exec backend alembic -c alembic.ini upgrade head
-```
-
-Verify tables in Postgres:
-```bash
-docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\dt"
-```
-
-## Backend Tests
-
-Run all backend test modules:
+Run all backend suites:
 ```bash
 ./backend_tests
 ```
 
-List available test modules:
+Run a module:
+```bash
+./backend_tests -run observability
+```
+
+List modules:
 ```bash
 ./backend_tests --h
 ```
 
-Run a single module:
+## Observability & Logs
+
+- Logs go to stdout/stderr (no file logging).
+- Response header `X-Request-ID` is always present.
+- Canonical request log line comes from `athos.request` and includes:
+  - `request_id`, `method`, `path`, `status_code`, `duration_ms`, `user_id`
+- Example:
+  - `INFO:athos.request:request_complete request_id=93170d3f-2ab9-49a9-aa2b-f4de0f06de44 method=GET path=/v1/workouts/... status_code=200 duration_ms=1.87 user_id=99`
+- Uvicorn access logs may also appear separately.
+
+Stream logs:
 ```bash
-./backend_tests -run read
+docker compose logs -f backend
 ```
 
-## Stop the Stack
+## Stop
 
-Stop containers:
 ```bash
 docker compose down
 ```
 
-Stop and remove DB volume (destructive for local data):
+Remove local DB volume (destructive):
 ```bash
 docker compose down -v
 ```

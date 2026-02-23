@@ -16,6 +16,7 @@ Available modules:
   data_entry   -> tests.test_data_entry
   read         -> tests.test_read_workouts
   dashboard    -> tests.test_dashboard
+  observability -> tests.test_observability
   all          -> all modules above
 HELP
 }
@@ -27,7 +28,8 @@ module_to_test() {
     data_entry) echo "tests.test_data_entry" ;;
     read) echo "tests.test_read_workouts" ;;
     dashboard) echo "tests.test_dashboard" ;;
-    all) echo "tests.test_health_smoke tests.test_auth tests.test_data_entry tests.test_read_workouts tests.test_dashboard" ;;
+    observability) echo "tests.test_observability" ;;
+    all) echo "tests.test_health_smoke tests.test_auth tests.test_data_entry tests.test_read_workouts tests.test_dashboard tests.test_observability" ;;
     *)
       echo "Unknown module: $1" >&2
       print_help
@@ -36,7 +38,7 @@ module_to_test() {
   esac
 }
 
-MODULES="tests.test_health_smoke tests.test_auth tests.test_data_entry tests.test_read_workouts tests.test_dashboard"
+MODULES="tests.test_health_smoke tests.test_auth tests.test_data_entry tests.test_read_workouts tests.test_dashboard tests.test_observability"
 
 if [[ "${1:-}" == "--h" || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   print_help
