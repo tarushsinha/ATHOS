@@ -3,10 +3,11 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date as date_cls
 from datetime import datetime, time, timedelta, timezone
+import logging
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -30,6 +31,7 @@ from app.schemas.dashboard import (
 )
 
 router = APIRouter(prefix="/v1/dashboard", tags=["dashboard"])
+logger = logging.getLogger("athos.domain")
 
 
 def _resolve_client_timezone(client_timezone: str | None) -> ZoneInfo:
@@ -46,6 +48,7 @@ def _resolve_client_timezone(client_timezone: str | None) -> ZoneInfo:
 
 @router.get("/day", response_model=DashboardDayResponse)
 def dashboard_day(
+    request: Request,
     dashboard_date: date_cls = Query(..., alias="date"),
     limit: int = Query(50, ge=1, le=200),
     top_k: int = Query(10, ge=1, le=50),
@@ -72,6 +75,14 @@ def dashboard_day(
 
     workout_ids = [w.id for w in workouts]
     if not workout_ids:
+        logger.info(
+            "domain_event event=dashboard_day_read user_id=%s date=%s workout_count=%s top_k=%s request_id=%s",
+            current_user_id,
+            dashboard_date.isoformat(),
+            0,
+            top_k,
+            getattr(request.state, "request_id", None),
+        )
         return DashboardDayResponse(
             workouts=[],
             telemetry=DayTelemetryResponse(
@@ -247,5 +258,12 @@ def dashboard_day(
             total_duration_seconds=total_duration_seconds_value if has_duration else None,
         ),
     )
-
+    logger.info(
+        "domain_event event=dashboard_day_read user_id=%s date=%s workout_count=%s top_k=%s request_id=%s",
+        current_user_id,
+        dashboard_date.isoformat(),
+        len(workout_items),
+        top_k,
+        getattr(request.state, "request_id", None),
+    )
     return DashboardDayResponse(workouts=workout_items, telemetry=telemetry)

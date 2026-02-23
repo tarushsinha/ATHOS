@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -38,13 +38,21 @@ class CardioSessionInput(BaseModel):
 class WorkoutCreateRequest(BaseModel):
     workout_type: Modality
     title: str | None = Field(default=None, max_length=255)
-    start_ts: datetime
+    start_ts: datetime | None = None
     end_ts: datetime | None = None
     source: str | None = Field(default=None, max_length=50)
     provider: str | None = Field(default=None, max_length=100)
     client_uuid: UUID | None = None
     strength_sets: list[StrengthSetInput] | None = None
     cardio_session: CardioSessionInput | None = None
+    start_ts_defaulted: bool = Field(default=False, exclude=True)
+
+    @model_validator(mode="after")
+    def apply_start_ts_default(self) -> "WorkoutCreateRequest":
+        if self.start_ts is None:
+            self.start_ts = datetime.now(timezone.utc)
+            self.start_ts_defaulted = True
+        return self
 
     @model_validator(mode="after")
     def validate_payload_shape(self) -> "WorkoutCreateRequest":
