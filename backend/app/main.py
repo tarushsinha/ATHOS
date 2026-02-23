@@ -22,6 +22,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Client-Timezone"],
+    expose_headers=["X-Request-ID"],
 )
 app.add_middleware(RequestLoggingMiddleware)
 app.include_router(auth_router)
